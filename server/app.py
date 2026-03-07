@@ -35,8 +35,11 @@ except Exception as e:  # pragma: no cover
         "openenv is required for the web interface. Install dependencies with '\n    uv sync\n'"
     ) from e
 
-from timetravel.models import TimetravelAction, TimetravelObservation
-from timetravel.server.timetravel_environment import TimetravelEnvironment
+try:  # pragma: no cover - supports both package and local execution
+    from ..models import TimetravelAction, TimetravelObservation
+except ImportError:  # pragma: no cover
+    from models import TimetravelAction, TimetravelObservation
+from .timetravel_environment import TimetravelEnvironment
 
 
 # Create the app with web interface and README integration

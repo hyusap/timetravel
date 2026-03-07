@@ -13,7 +13,7 @@ tags:
 
 # Timetravel Environment
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+A reverse-only temporal control environment for testing rewind-aware agent policies. The environment supports normal step actions plus temporal controls (`branch`, `abandon`/`pause`) and logs meta-trajectory data for RL.
 
 ## Quick Start
 
@@ -119,22 +119,54 @@ The deployed space includes:
 ## Environment Details
 
 ### Action
-**TimetravelAction**: Contains a single field
-- `message` (str) - The message to echo back
+**TimetravelAction** supports normal step actions and temporal controls:
+- `kind` (`step` | `branch` | `abandon` | `pause`) - Action type (defaults to `step`)
+- `message` (str) - Message for `step`
+- `instruction` (str) - Replan instruction for `branch`
+- `ago` (int) - Number of steps to rewind for `branch`, must satisfy `ago > 0`
+
+`branch(instruction, ago)` semantics in v0:
+- rewinds active timeline by `ago` steps
+- stops old timeline (marked paused)
+- continues only from the new forked trajectory
+- no parallel sibling timelines yet
 
 ### Observation
-**TimetravelObservation**: Contains the echo response and metadata
+**TimetravelObservation** contains response fields and temporal metadata:
 - `echoed_message` (str) - The message echoed back
 - `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
+- `current_step` (int) - Active timeline step count
+- `active_timeline_id` (str) - ID of active timeline
+- `timeline_status` (`active` | `paused` | `abandoned` | `done`)
+- `last_branch_event` (dict | null) - Most recent branch metadata
+- `event_log_size` (int) - Count of structured meta-trajectory events
+- `reward` (float), `done` (bool), `metadata` (dict)
 
 ### Reward
-The reward is calculated as: `message_length × 0.1`
+For `step` actions, reward is calculated as: `message_length × 0.1`
 - "Hi" → reward: 0.2
 - "Hello, World!" → reward: 1.3
 - Empty message → reward: 0.0
+
+Temporal control actions (`branch`, `abandon`, `pause`) currently return reward `0.0`.
+
+### Temporal Control Example
+
+```python
+from timetravel import TimetravelAction, TimetravelEnv
+
+with TimetravelEnv(base_url="http://localhost:8000") as env:
+    env.reset()
+    env.step(TimetravelAction(message="try approach A"))
+    env.step(TimetravelAction(message="still stuck"))
+
+    # Rewind one step and continue from a forked timeline
+    env.step(TimetravelAction(kind="branch", instruction="Try approach B", ago=1))
+    env.step(TimetravelAction(message="approach B attempt"))
+
+    # Explicitly end the active timeline
+    env.step(TimetravelAction(kind="abandon"))
+```
 
 ## Advanced Usage
 
@@ -211,6 +243,51 @@ with ThreadPoolExecutor(max_workers=4) as executor:
 ```
 
 ## Development & Testing
+
+### Reverse-Only Benchmark (Code Door)
+
+The repository includes a training benchmark focused on "sample from the future and send backwards" behavior using reverse-only branching.
+
+- Environment: `benchmarks/reverse_code_door.py`
+- Key constraint: success under tight budget is only achievable with `branch(instruction, ago>0)`
+- Outputs: per-event meta-trajectory logs suitable for offline RL / imitation
+
+Run the benchmark suite:
+
+```bash
+uv run python benchmarks/reverse_code_door.py
+```
+
+Export rollout data for training:
+
+```python
+from benchmarks.reverse_code_door import export_training_rollouts, rewind_policy
+
+export_training_rollouts(
+    rewind_policy,
+    "data/reverse_code_door_rewind.jsonl",
+    episodes=500,
+    seed=42,
+)
+```
+
+Shortest-path terminal reward is the default. You can tune the shape with config:
+
+```python
+from benchmarks.reverse_code_door import EpisodeConfig, evaluate_policy, rewind_policy
+
+cfg = EpisodeConfig(
+    budget=6,
+    step_cost=0.0,
+    success_reward=1.0,
+    optimal_final_path_length=2,
+    final_path_penalty=0.2,
+)
+
+metrics = evaluate_policy(rewind_policy, episodes=200, seed=0, config=cfg)
+```
+
+Success reward decays with the final active timeline path length, which directly incentivizes concise rewound solutions.
 
 ### Direct Environment Testing
 
