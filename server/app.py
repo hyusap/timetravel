@@ -35,9 +35,8 @@ except Exception as e:  # pragma: no cover
         "openenv is required for the web interface. Install dependencies with '\n    uv sync\n'"
     ) from e
 
-# Import from local models.py (PYTHONPATH includes /app/env in Docker)
-from models import TimetravelAction, TimetravelObservation
-from .timetravel_environment import TimetravelEnvironment
+from timetravel.models import TimetravelAction, TimetravelObservation
+from timetravel.server.timetravel_environment import TimetravelEnvironment
 
 
 # Create the app with web interface and README integration

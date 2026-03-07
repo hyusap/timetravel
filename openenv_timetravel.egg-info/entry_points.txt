@@ -1,0 +1,2 @@
+[console_scripts]
+server = timetravel.server.app:main

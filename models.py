@@ -1,28 +1,40 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+from __future__ import annotations
 
-"""
-Data models for the Timetravel Environment.
+from typing import Any, Literal
 
-The timetravel environment is a simple test environment that echoes back messages.
-"""
-
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from openenv.core.env_server.types import Action, Observation
 
 
 class TimetravelAction(Action):
-    """Action for the Timetravel environment - just a message to echo."""
+    """Temporal-control action schema for all current and future environments."""
 
-    message: str = Field(..., description="Message to echo back")
+    kind: Literal["step", "branch", "abandon", "pause"] = Field(default="step")
+    message: str | None = Field(default=None, description="Domain step payload (RPS move for now)")
+    instruction: str | None = Field(default=None, description="Instruction to attach when branching")
+    ago: int | None = Field(default=None, description="How many steps back to rewind on branch")
+
+    @model_validator(mode="after")
+    def _validate(self) -> "TimetravelAction":
+        if self.kind == "step" and not (self.message and self.message.strip()):
+            raise ValueError("step actions require a non-empty message")
+        if self.kind == "branch":
+            if self.ago is None:
+                raise ValueError("branch actions require ago")
+            if not (self.instruction and self.instruction.strip()):
+                raise ValueError("branch actions require a non-empty instruction")
+        return self
 
 
 class TimetravelObservation(Observation):
-    """Observation from the Timetravel environment - the echoed message."""
+    """Generic observation schema with temporal metadata and domain world-state."""
 
-    echoed_message: str = Field(default="", description="The echoed message")
-    message_length: int = Field(default=0, description="Length of the echoed message")
+    summary: str = Field(default="", description="Short human-readable transition summary")
+    world_state: dict[str, Any] = Field(default_factory=dict, description="Domain-specific world state")
+
+    current_step: int = Field(default=0, description="Current active step index")
+    active_timeline_id: str = Field(default="", description="Current active timeline id")
+    last_branch_event: str | None = Field(default=None, description="Most recent branch event id")
+    timeline_status: Literal["active", "paused", "abandoned", "done"] = Field(default="active")
+    event_log_size: int = Field(default=0, description="Number of events captured in metadata event log")
