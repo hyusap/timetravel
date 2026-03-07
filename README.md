@@ -289,6 +289,56 @@ metrics = evaluate_policy(rewind_policy, episodes=200, seed=0, config=cfg)
 
 Success reward decays with the final active timeline path length, which directly incentivizes concise rewound solutions.
 
+### TextWorld Temporal Wrapper (Replay-Based Rewind)
+
+The repository also includes a TextWorld-compatible temporal wrapper that applies the same reverse-only controls:
+
+- Module: `benchmarks/textworld_temporal.py`
+- Actions: `step(command)`, `branch(instruction, ago>0)`, `abandon/pause`
+- Rewind implementation: reset-and-replay from active timeline history (no native snapshot requirement)
+
+Use it with a native TextWorld game file:
+
+```python
+from benchmarks.textworld_temporal import (
+    TextWorldEpisodeConfig,
+    TextWorldTemporalAction,
+    make_native_textworld_env,
+)
+
+env = make_native_textworld_env(
+    "games/my_game.z8",
+    config=TextWorldEpisodeConfig(budget=64, step_cost=-0.01),
+)
+
+obs = env.reset(seed=0)
+obs = env.step(TextWorldTemporalAction(command="look"))
+obs = env.step(TextWorldTemporalAction(command="go east"))
+obs = env.step(TextWorldTemporalAction(kind="branch", instruction="Try key route", ago=1))
+obs = env.step(TextWorldTemporalAction(kind="abandon"))
+```
+
+If `textworld` is not installed, native backend construction raises an informative `ImportError`.
+
+Generate worlds programmatically for curriculum runs:
+
+```python
+from benchmarks.textworld_temporal import TextWorldGenerationConfig, create_textworld_worlds
+
+worlds = create_textworld_worlds(
+    prefix="curriculum",
+    count=5,
+    generation=TextWorldGenerationConfig(
+        output_dir="games",
+        world_size=6,
+        nb_objects=8,
+        quest_length=4,
+        theme="house",
+        seed=100,
+    ),
+)
+```
+
 ### Direct Environment Testing
 
 Test the environment logic directly without starting the HTTP server:
