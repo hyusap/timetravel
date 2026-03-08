@@ -75,7 +75,6 @@ def collect_episode(
     env_config: EpisodeConfig,
     generation_max_new_tokens: int,
     temperature: float,
-    exploration_epsilon: float = 0.0,
     debug_prefix: str | None = None,
     debug_full_tokens: bool = False,
 ) -> tuple[list[tuple["torch.Tensor", "torch.Tensor", float]], bool]:
@@ -110,10 +109,6 @@ def collect_episode(
             action = parse_action(action_text)
             if action is None:
                 action = TemporalAction(command="wait")
-            elif exploration_epsilon > 0.0 and random.random() < exploration_epsilon:
-                # Force exploration to avoid identical rollouts (zero-advantage collapse).
-                exploratory = ["forward", "backward", "inspect", "wait"]
-                action = TemporalAction(command=random.choice(exploratory))
 
             obs = env.step(action)
             if debug_prefix is not None:
@@ -232,12 +227,6 @@ def main() -> None:
     parser.add_argument("--episodes-per-step", type=int, default=4)
     parser.add_argument("--num-generations", type=int, default=4)
     parser.add_argument("--temperature", type=float, default=0.7)
-    parser.add_argument(
-        "--exploration-epsilon",
-        type=float,
-        default=0.15,
-        help="Probability of replacing sampled action with random exploratory action.",
-    )
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
@@ -336,7 +325,6 @@ def main() -> None:
                         env_config=env_config,
                         generation_max_new_tokens=args.generation_max_new_tokens,
                         temperature=args.temperature,
-                        exploration_epsilon=args.exploration_epsilon,
                         debug_prefix=debug_prefix,
                         debug_full_tokens=args.print_full_tokens,
                     )
