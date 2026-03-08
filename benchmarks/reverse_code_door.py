@@ -24,7 +24,8 @@ class EpisodeConfig:
     budget: int = 6
     step_cost: float = -0.01
     success_reward: float = 1.0
-    failure_penalty: float = -1.0
+    # Applied on incorrect unlock attempts; keep this large so brute-force is strongly disfavored.
+    failure_penalty: float = -5.0
     optimal_final_path_length: int = 2
     final_path_penalty: float = 0.15
     # Penalize unlock attempts made too early in the episode (1-indexed step threshold).

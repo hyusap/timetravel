@@ -12,6 +12,7 @@ import argparse
 import json
 import random
 import sys
+import time
 from pathlib import Path
 from typing import Iterable
 
@@ -236,6 +237,12 @@ def main() -> None:
     parser.add_argument("--max-turns", type=int, default=None, help="Alias for max episode steps")
     parser.add_argument("--generation-max-new-tokens", type=int, default=64)
     parser.add_argument("--env-budget", type=int, default=6)
+    parser.add_argument(
+        "--env-failure-penalty",
+        type=float,
+        default=-5.0,
+        help="Penalty applied for incorrect unlock attempts.",
+    )
     parser.add_argument("--env-end-on-wrong-unlock", action="store_true", default=False)
     parser.add_argument("--seed-min", type=int, default=0)
     parser.add_argument("--seed-max", type=int, default=10000)
@@ -259,6 +266,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     env_config = EpisodeConfig(
         budget=args.env_budget,
+        failure_penalty=args.env_failure_penalty,
         end_episode_on_wrong_unlock=args.env_end_on_wrong_unlock,
     )
 
@@ -296,6 +304,7 @@ def main() -> None:
     model.train()
     with metrics_file.open("w", encoding="utf-8") as mf:
         for train_step in range(args.num_train_steps):
+            step_start = time.perf_counter()
             optimizer.zero_grad()
 
             step_successes = 0
@@ -341,8 +350,16 @@ def main() -> None:
 
             if num_transitions > 0:
                 (total_loss / num_transitions).backward()
-                clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                grad_norm = clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
+                step_ms = (time.perf_counter() - step_start) * 1000.0
+                print(
+                    f"[update] train_step={train_step} optimizer.step() transitions={num_transitions} "
+                    f"grad_norm={float(grad_norm):.4f} step_ms={step_ms:.1f}",
+                    flush=True,
+                )
+            else:
+                print(f"[update] train_step={train_step} skipped (no transitions)", flush=True)
 
             denom = args.episodes_per_step * args.num_generations
             success_rate = step_successes / denom
@@ -354,6 +371,7 @@ def main() -> None:
                 "success_rate": success_rate,
                 "avg_return": avg_return,
                 "loss": loss_value,
+                "num_transitions": num_transitions,
             }
 
             if args.eval_every > 0 and (train_step % args.eval_every == 0):
