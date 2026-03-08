@@ -59,6 +59,8 @@ def _parse_action_dict(payload: dict) -> Optional[TemporalAction]:
             ago = int(ago_val)
         except (TypeError, ValueError):
             return None
+        if ago <= 0:
+            return None
         instruction = str(payload.get("instruction", "")).strip()
         return TemporalAction(kind="branch", ago=ago, instruction=instruction)
     return None
