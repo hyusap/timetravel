@@ -80,6 +80,7 @@ def compute_episode_return(transitions: Iterable[tuple[torch.Tensor, torch.Tenso
 
 def policy_loss(model, prompt_ids: torch.Tensor, action_ids: torch.Tensor, advantage: float) -> torch.Tensor:
     """Compute mean token NLL over action tokens weighted by advantage."""
+    import torch
 
     input_ids = torch.cat([prompt_ids, action_ids]).unsqueeze(0).to(model.device)
     labels = torch.full_like(input_ids, -100)
