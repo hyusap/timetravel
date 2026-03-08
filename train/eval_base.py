@@ -27,10 +27,11 @@ def run_episode(model, tokenizer, seed: int, max_steps: int, max_new_tokens: int
     with torch.inference_mode():
         for step in range(max_steps):
             messages.append({"role": "user", "content": obs_to_text(obs, step + 1)})
+            prompt_messages = messages + [{"role": "assistant", "content": "ACTION:"}]
 
             prompt_ids = tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
+                prompt_messages,
+                add_generation_prompt=False,
                 return_tensors="pt",
             ).to(model.device)
 

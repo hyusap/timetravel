@@ -88,9 +88,10 @@ def collect_episode(
     with torch.inference_mode():
         for step in range(max_episode_steps):
             messages.append({"role": "user", "content": obs_to_text(obs, step + 1)})
+            prompt_messages = messages + [{"role": "assistant", "content": "ACTION:"}]
             prompt_ids = tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
+                prompt_messages,
+                add_generation_prompt=False,
                 return_tensors="pt",
             ).to(model.device)
 
@@ -173,9 +174,10 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
 
             for step in range(max_episode_steps):
                 messages.append({"role": "user", "content": obs_to_text(obs, step + 1)})
+                prompt_messages = messages + [{"role": "assistant", "content": "ACTION:"}]
                 prompt_ids = tokenizer.apply_chat_template(
-                    messages,
-                    add_generation_prompt=True,
+                    prompt_messages,
+                    add_generation_prompt=False,
                     return_tensors="pt",
                 ).to(model.device)
                 action_ids = _generate_until_action(
