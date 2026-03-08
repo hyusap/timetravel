@@ -102,7 +102,7 @@ def collect_episode(
                 max_total_new_tokens=generation_max_new_tokens,
                 chunk_new_tokens=min(32, generation_max_new_tokens),
                 temperature=temperature,
-                do_sample=False,
+                do_sample=True,
             )
             action_text = tokenizer.decode(action_ids, skip_special_tokens=True).strip()
             action = parse_action(action_text)
@@ -227,7 +227,7 @@ def main() -> None:
     parser.add_argument("--num-train-steps", type=int, default=300)
     parser.add_argument("--episodes-per-step", type=int, default=4)
     parser.add_argument("--num-generations", type=int, default=4)
-    parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
@@ -236,6 +236,7 @@ def main() -> None:
     parser.add_argument("--max-turns", type=int, default=None, help="Alias for max episode steps")
     parser.add_argument("--generation-max-new-tokens", type=int, default=64)
     parser.add_argument("--env-budget", type=int, default=6)
+    parser.add_argument("--env-end-on-wrong-unlock", action="store_true", default=False)
     parser.add_argument("--seed-min", type=int, default=0)
     parser.add_argument("--seed-max", type=int, default=10000)
     parser.add_argument("--rng-seed", type=int, default=3407)
@@ -256,7 +257,10 @@ def main() -> None:
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    env_config = EpisodeConfig(budget=args.env_budget)
+    env_config = EpisodeConfig(
+        budget=args.env_budget,
+        end_episode_on_wrong_unlock=args.env_end_on_wrong_unlock,
+    )
 
     import torch
     from torch.nn.utils import clip_grad_norm_
