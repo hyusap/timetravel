@@ -339,6 +339,41 @@ worlds = create_textworld_worlds(
 )
 ```
 
+### Script-Based Training (No Notebook Required)
+
+Notebook logic has been extracted into reusable scripts under `train/`:
+
+- `train/train_reverse_code_door.py` - GRPO-style training loop
+- `train/eval_base.py` - deterministic base/adaptor evaluation
+- `train/play.py` - manual interactive environment play
+- `train/reverse_code_door_agent.py` - shared prompt + action parsing helpers
+
+Install training dependencies (once on your training machine):
+
+```bash
+uv add -r train/requirements.txt
+```
+
+Run training:
+
+```bash
+uv run python train/train_reverse_code_door.py \
+  --output-dir runs/reverse_code_door \
+  --num-train-steps 300 \
+  --episodes-per-step 4 \
+  --num-generations 4
+```
+
+Run evaluation:
+
+```bash
+uv run python train/eval_base.py --episodes 50 --seed-start 0
+```
+
+Outputs:
+- Training metrics are written to `runs/.../metrics.jsonl`
+- Adapter checkpoints are saved at `runs/.../checkpoint_step_*` and `runs/.../final_adapter`
+
 ### Direct Environment Testing
 
 Test the environment logic directly without starting the HTTP server:

@@ -1,0 +1,13 @@
+# Training/runtime dependencies for train/*.py scripts.
+# Install with one of:
+#   uv add -r train/requirements.txt
+#   pip install -r train/requirements.txt
+
+bitsandbytes
+trl==0.22.2
+transformers==4.56.2
+tokenizers
+trackio
+# Unsloth packages from git, matching the notebook setup.
+unsloth_zoo[base] @ git+https://github.com/unslothai/unsloth-zoo
+unsloth[base] @ git+https://github.com/unslothai/unsloth
