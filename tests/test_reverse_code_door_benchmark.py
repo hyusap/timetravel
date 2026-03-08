@@ -90,3 +90,43 @@ def test_shortest_path_reward_prefers_shorter_final_path() -> None:
 
     assert obs["done"] is True
     assert rewind_reward > linear_reward
+
+
+def test_early_unlock_gets_extra_negative_penalty() -> None:
+    cfg = EpisodeConfig(
+        budget=8,
+        step_cost=0.0,
+        failure_penalty=-1.0,
+        early_unlock_turn_threshold=2,
+        early_unlock_penalty=-0.25,
+        repeated_code_penalty=0.0,
+        end_episode_on_wrong_unlock=False,
+    )
+    env = ReverseCodeDoorEnv(config=cfg)
+    env.reset(seed=1)
+    env.step(TemporalAction(command="forward"))  # step 1, now at door
+    obs = env.step(TemporalAction(command="unlock", unlock_code="000"))  # step 2
+
+    assert obs["done"] is False
+    assert obs["reward"] == pytest.approx(-1.25)
+
+
+def test_repeated_wrong_code_gets_larger_penalty() -> None:
+    cfg = EpisodeConfig(
+        budget=10,
+        step_cost=0.0,
+        failure_penalty=-1.0,
+        early_unlock_turn_threshold=0,  # isolate repeated-code shaping
+        early_unlock_penalty=0.0,
+        repeated_code_penalty=-0.5,
+        end_episode_on_wrong_unlock=False,
+    )
+    env = ReverseCodeDoorEnv(config=cfg)
+    env.reset(seed=2)
+    env.step(TemporalAction(command="forward"))  # move to door
+
+    first = env.step(TemporalAction(command="unlock", unlock_code="111"))
+    second = env.step(TemporalAction(command="unlock", unlock_code="111"))
+
+    assert first["reward"] == pytest.approx(-1.0)
+    assert second["reward"] == pytest.approx(-1.5)

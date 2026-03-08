@@ -27,6 +27,13 @@ class EpisodeConfig:
     failure_penalty: float = -1.0
     optimal_final_path_length: int = 2
     final_path_penalty: float = 0.15
+    # Penalize unlock attempts made too early in the episode (1-indexed step threshold).
+    early_unlock_turn_threshold: int = 2
+    early_unlock_penalty: float = -0.25
+    # Penalize repeated attempts of the same code; multiplied by repeat index.
+    repeated_code_penalty: float = -0.5
+    # Keep default benchmark semantics unless explicitly overridden.
+    end_episode_on_wrong_unlock: bool = True
 
 
 class ReverseCodeDoorEnv:
@@ -56,6 +63,7 @@ class ReverseCodeDoorEnv:
         self._episode_done = False
         self._last_branch_event: Optional[Dict[str, Any]] = None
         self._meta_events: List[Dict[str, Any]] = []
+        self._unlock_attempt_counts: Dict[str, int] = {}
         self.reset(seed=0)
 
     def reset(self, seed: Optional[int] = None) -> Dict[str, Any]:
@@ -70,6 +78,7 @@ class ReverseCodeDoorEnv:
         self._active_timeline_id = f"timeline-{self._timeline_counter}"
         self._last_branch_event = None
         self._meta_events = []
+        self._unlock_attempt_counts = {}
         self._timelines = {
             self._active_timeline_id: {
                 "timeline_id": self._active_timeline_id,
@@ -183,14 +192,16 @@ class ReverseCodeDoorEnv:
                 state["visible_code"] = self._secret_code
         elif command == "unlock":
             attempt = action.unlock_code or self._extract_code(state.get("instruction_hint", ""))
+            reward += self._unlock_shaping_penalty(attempt=attempt)
             if position == 1 and attempt == self._secret_code:
                 done = True
                 self._episode_done = True
-                reward = self._success_reward(final_path_length=self._current_step() + 1)
+                reward += self._success_reward(final_path_length=self._current_step() + 1)
             else:
-                done = True
-                self._episode_done = True
-                reward = self.config.failure_penalty
+                reward += self.config.failure_penalty
+                if self.config.end_episode_on_wrong_unlock:
+                    done = True
+                    self._episode_done = True
 
         next_state = {
             "position": position,
@@ -279,6 +290,24 @@ class ReverseCodeDoorEnv:
             done=True,
         )
         return self.config.step_cost, True, {"event_id": event["event_id"], "event_type": action.kind}
+
+    def _unlock_shaping_penalty(self, *, attempt: Optional[str]) -> float:
+        penalty = 0.0
+        next_step_index = self._current_step() + 1
+        if (
+            self.config.early_unlock_penalty != 0.0
+            and self.config.early_unlock_turn_threshold > 0
+            and next_step_index <= self.config.early_unlock_turn_threshold
+        ):
+            penalty += self.config.early_unlock_penalty
+
+        if attempt:
+            seen = self._unlock_attempt_counts.get(attempt, 0)
+            if seen > 0 and self.config.repeated_code_penalty != 0.0:
+                penalty += self.config.repeated_code_penalty * seen
+            self._unlock_attempt_counts[attempt] = seen + 1
+
+        return penalty
 
     def _observation(
         self,
