@@ -23,8 +23,8 @@ Valid formats:
   {"command":"forward"}
   {"command":"backward"}
   {"command":"inspect"}
-  {"command":"unlock","code":"123"}
-  {"command":"branch","ago":2,"instruction":"Use code 123 at door"}
+  {"command":"unlock","code":""}
+  {"command":"branch","ago":number,"instruction":"Use code XYZ at door"}
 """
 
 CODE_PATTERN = re.compile(r"\b(\d{3})\b")
