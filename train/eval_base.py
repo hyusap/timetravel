@@ -71,6 +71,7 @@ def run_episode(model, tokenizer, seed: int, max_steps: int, max_new_tokens: int
             prompt_ids = tokenizer.apply_chat_template(
                 messages,
                 add_generation_prompt=True,
+                enable_thinking=False,
                 return_tensors="pt",
             ).to(model.device)
             action_ids = _generate_until_valid_json_action(
