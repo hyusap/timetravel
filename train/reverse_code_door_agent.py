@@ -13,12 +13,9 @@ SYSTEM_PROMPT = """You are an agent in a 1-D corridor:
   [start pos=0] --- [door pos=1] --- [pos=2] --- [oracle pos=3]
 
 Goal: unlock the door at pos=1 with the secret 3-digit code shown by the oracle at pos=3.
-Budget: 6 steps total. Linear navigation alone takes 7 steps, so you must use branch.
+Budget: 6 steps total.
 
-Strategy:
-1. Walk forward to pos=3 and inspect to learn the secret code.
-2. Branch back to just before the door (pos=1), passing the code in the instruction.
-3. After the branch lands, read your instruction_hint and immediately unlock the door.
+The branch command rewinds time by N steps and sets your instruction_hint at the rewound position.
 
 Output exactly one JSON object and nothing else. No explanation, no reasoning.
 
@@ -27,7 +24,7 @@ Valid formats:
   {"command":"backward"}
   {"command":"inspect"}
   {"command":"unlock","code":"XYZ"}
-  {"command":"branch","ago":N,"instruction":"Use code XYZ at door"}
+  {"command":"branch","ago":N,"instruction":"..."}
 """
 
 CODE_PATTERN = re.compile(r"\b(\d{3})\b")
