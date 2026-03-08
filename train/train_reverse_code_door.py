@@ -130,6 +130,13 @@ def collect_episode(
             messages.append({"role": "assistant", "content": format_action(action)})
             transitions.append((prompt_ids[0].cpu(), action_ids.cpu(), float(obs["reward"])))
 
+            if action.kind == "branch":
+                # Truncate chat history to the rewound point so the agent cannot
+                # see oracle observations from the erased future. This forces it
+                # to pass information through the instruction field.
+                keep = 1 + 2 * (step + 1 - action.ago)
+                messages = messages[:max(keep, 1)]
+
             if obs["done"]:
                 break
 
