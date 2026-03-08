@@ -16,6 +16,7 @@ Budget: 6 steps total. Linear navigation takes 7 steps - you MUST use branch to 
 
 You may think step-by-step, but your final line MUST be exactly:
   ACTION: <command>
+Do not output a command anywhere else.
 
 Allowed commands:
   forward
@@ -25,11 +26,6 @@ Allowed commands:
   branch <ago> <instruction>"""
 
 CODE_PATTERN = re.compile(r"\b(\d{3})\b")
-FORWARD_PATTERN = re.compile(r"\bforward\b")
-BACKWARD_PATTERN = re.compile(r"\bbackward\b")
-INSPECT_PATTERN = re.compile(r"\binspect\b")
-UNLOCK_PATTERN = re.compile(r"\bunlock(?:\s+(\d{3}))?\b")
-BRANCH_PATTERN = re.compile(r"\bbranch\s+(\d+)(?:\s+([^\n\r]+))?")
 
 
 def obs_to_text(obs: dict, step_num: int) -> str:
@@ -55,8 +51,7 @@ def parse_action(text: str) -> Optional[TemporalAction]:
         if line.lower().startswith("action:"):
             action_line = line.split(":", 1)[1].strip().lower()
     if action_line is None:
-        # Fallback: use the last non-empty line as best-effort command text.
-        action_line = lines[-1].lower()
+        return None
 
     clean = action_line
     if clean == "forward":
@@ -80,25 +75,6 @@ def parse_action(text: str) -> Optional[TemporalAction]:
         except (IndexError, ValueError):
             return None
 
-    # Recovery mode: extract first valid command from noisy text.
-    noisy = text.lower()
-    m_branch = BRANCH_PATTERN.search(noisy)
-    if m_branch is not None:
-        ago = int(m_branch.group(1))
-        instruction = (m_branch.group(2) or "").strip()
-        return TemporalAction(kind="branch", ago=ago, instruction=instruction)
-
-    m_unlock = UNLOCK_PATTERN.search(noisy)
-    if m_unlock is not None:
-        code = m_unlock.group(1) or ""
-        return TemporalAction(command="unlock", unlock_code=code)
-
-    if INSPECT_PATTERN.search(noisy):
-        return TemporalAction(command="inspect")
-    if BACKWARD_PATTERN.search(noisy):
-        return TemporalAction(command="backward")
-    if FORWARD_PATTERN.search(noisy):
-        return TemporalAction(command="forward")
     return None
 
 

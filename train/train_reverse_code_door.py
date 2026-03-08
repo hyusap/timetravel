@@ -213,7 +213,7 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train an Unsloth model on Reverse Code Door (script version)")
-    parser.add_argument("--model-name", default="unsloth/Qwen3-8B")
+    parser.add_argument("--model-name", default="unsloth/Qwen3-4B-Instruct-2507")
     parser.add_argument("--output-dir", default="runs/reverse_code_door")
 
     parser.add_argument("--max-seq-length", type=int, default=2048)
