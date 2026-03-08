@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Optional
 
@@ -12,20 +13,19 @@ SYSTEM_PROMPT = """You are an agent in a 1-D corridor:
   [start pos=0] --- [door pos=1] --- [pos=2] --- [oracle pos=3]
 
 Goal: unlock the door at pos=1 with the secret 3-digit code shown by the oracle at pos=3.
-Budget: 6 steps total. Linear navigation takes 7 steps - you MUST use branch to rewind.
+Budget: 6 steps total. Linear navigation takes 7 steps, so branching is required.
 
-You may think step-by-step, but your final line MUST be exactly:
-  ACTION: <command>
-Do not output a command anywhere else.
-
-Allowed commands:
-  forward
-  backward
-  inspect
-  unlock <code>
-  branch <ago> <instruction>"""
+Output exactly one JSON object and nothing else.
+Valid formats:
+  {"command": "forward"}
+  {"command": "backward"}
+  {"command": "inspect"}
+  {"command": "unlock", "code": "123"}
+  {"command": "branch", "ago": 2, "instruction": "Use code 123 at door"}
+"""
 
 CODE_PATTERN = re.compile(r"\b(\d{3})\b")
+JSON_CANDIDATE_PATTERN = re.compile(r"\{.*?\}", re.DOTALL)
 
 
 def obs_to_text(obs: dict, step_num: int) -> str:
@@ -40,40 +40,48 @@ def obs_to_text(obs: dict, step_num: int) -> str:
     )
 
 
+def _parse_action_dict(payload: dict) -> Optional[TemporalAction]:
+    command = str(payload.get("command", "")).strip().lower()
+    if command in {"forward", "backward", "inspect", "wait"}:
+        return TemporalAction(command=command)
+    if command == "unlock":
+        code = str(payload.get("code", "")).strip()
+        m = CODE_PATTERN.search(code)
+        code = m.group(1) if m else code
+        return TemporalAction(command="unlock", unlock_code=code)
+    if command == "branch":
+        ago_val = payload.get("ago")
+        try:
+            ago = int(ago_val)
+        except (TypeError, ValueError):
+            return None
+        instruction = str(payload.get("instruction", "")).strip()
+        return TemporalAction(kind="branch", ago=ago, instruction=instruction)
+    return None
+
+
 def parse_action(text: str) -> Optional[TemporalAction]:
-    """Parse model output into a TemporalAction."""
+    """Parse model output JSON into a TemporalAction."""
     if not text.strip():
         return None
 
-    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
-    action_line = None
-    for line in lines:
-        if line.lower().startswith("action:"):
-            action_line = line.split(":", 1)[1].strip().lower()
-    if action_line is None:
-        return None
-
-    clean = action_line
-    if clean == "forward":
-        return TemporalAction(command="forward")
-    if clean == "backward":
-        return TemporalAction(command="backward")
-    if clean == "inspect":
-        return TemporalAction(command="inspect")
-    if clean.startswith("unlock"):
-        parts = clean.split()
-        code = parts[1] if len(parts) > 1 else ""
-        code_match = CODE_PATTERN.search(code)
-        parsed_code = code_match.group(1) if code_match else code
-        return TemporalAction(command="unlock", unlock_code=parsed_code)
-    if clean.startswith("branch"):
-        parts = clean.split(None, 2)
+    for candidate in JSON_CANDIDATE_PATTERN.findall(text):
         try:
-            ago = int(parts[1])
-            instruction = parts[2] if len(parts) > 2 else ""
-            return TemporalAction(kind="branch", ago=ago, instruction=instruction)
-        except (IndexError, ValueError):
-            return None
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            action = _parse_action_dict(payload)
+            if action is not None:
+                return action
+
+    # Fallback: full text may itself be a JSON object without clean regex capture.
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return _parse_action_dict(payload)
+    except json.JSONDecodeError:
+        return None
 
     return None
 
@@ -83,11 +91,21 @@ def infer_success(obs: dict) -> bool:
 
 
 def format_action(action: TemporalAction) -> str:
-    """Return a compact canonical action string for chat history."""
+    """Return a compact canonical JSON action for chat history."""
+    if action.kind == "branch":
+        return json.dumps(
+            {
+                "command": "branch",
+                "ago": action.ago,
+                "instruction": action.instruction or "",
+            },
+            separators=(",", ":"),
+        )
+
     if action.kind != "step":
-        if action.kind == "branch":
-            return f"ACTION: branch {action.ago} {action.instruction}".strip()
-        return f"ACTION: {action.kind}"
+        return json.dumps({"command": action.kind}, separators=(",", ":"))
+
     if action.command == "unlock":
-        return f"ACTION: unlock {action.unlock_code or ''}".strip()
-    return f"ACTION: {action.command}"
+        return json.dumps({"command": "unlock", "code": action.unlock_code or ""}, separators=(",", ":"))
+
+    return json.dumps({"command": action.command}, separators=(",", ":"))

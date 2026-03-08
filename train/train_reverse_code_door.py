@@ -21,84 +21,6 @@ from benchmarks.reverse_code_door import ReverseCodeDoorEnv
 from train.reverse_code_door_agent import SYSTEM_PROMPT, format_action, infer_success, obs_to_text, parse_action
 
 
-def _generate_until_action(
-    model,
-    tokenizer,
-    prompt_ids,
-    *,
-    max_total_new_tokens: int,
-    chunk_new_tokens: int,
-    temperature: float,
-    do_sample: bool,
-):
-    """Generate incrementally until a valid ACTION line is emitted or token cap is reached."""
-    import torch
-
-    generated = torch.empty(0, dtype=prompt_ids.dtype, device=prompt_ids.device)
-    cursor = prompt_ids
-    tokens_left = max_total_new_tokens
-
-    while tokens_left > 0:
-        step_tokens = min(chunk_new_tokens, tokens_left)
-        attention_mask = torch.ones_like(cursor, device=cursor.device)
-        out = model.generate(
-            cursor,
-            attention_mask=attention_mask,
-            max_new_tokens=step_tokens,
-            temperature=temperature,
-            do_sample=do_sample,
-            pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-        )
-        new_ids = out[0][cursor.shape[1] :]
-        if len(new_ids) == 0:
-            break
-
-        generated = torch.cat([generated, new_ids], dim=0)
-        cursor = torch.cat([cursor[0], new_ids]).unsqueeze(0)
-        tokens_left -= len(new_ids)
-
-        text = tokenizer.decode(generated, skip_special_tokens=True).strip()
-        if "action:" in text.lower() and parse_action(text) is not None:
-            break
-
-    return generated
-
-
-def _repair_action_with_strict_prompt(
-    model,
-    tokenizer,
-    messages,
-    *,
-    max_new_tokens: int = 24,
-):
-    """Second-pass decode forcing a one-line ACTION response."""
-    import torch
-
-    repair_messages = messages + [
-        {
-            "role": "user",
-            "content": "Output exactly one line in this format only: ACTION: <command>",
-        }
-    ]
-    prompt_ids = tokenizer.apply_chat_template(
-        repair_messages,
-        add_generation_prompt=True,
-        return_tensors="pt",
-    ).to(model.device)
-    attention_mask = torch.ones_like(prompt_ids, device=prompt_ids.device)
-    out = model.generate(
-        prompt_ids,
-        attention_mask=attention_mask,
-        max_new_tokens=max_new_tokens,
-        temperature=0.0,
-        do_sample=False,
-        pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-    )
-    return out[0][prompt_ids.shape[1] :]
-
-
 def collect_episode(
     model,
     tokenizer,
@@ -109,7 +31,7 @@ def collect_episode(
     temperature: float,
     debug_prefix: str | None = None,
     debug_full_tokens: bool = False,
-) -> tuple[list[tuple[torch.Tensor, torch.Tensor, float]], bool]:
+) -> tuple[list[tuple["torch.Tensor", "torch.Tensor", float]], bool]:
     """Roll out one sampled episode and return per-step supervised transitions."""
     import torch
 
@@ -122,36 +44,30 @@ def collect_episode(
     with torch.inference_mode():
         for step in range(max_episode_steps):
             messages.append({"role": "user", "content": obs_to_text(obs, step + 1)})
-            prompt_messages = messages + [{"role": "assistant", "content": "ACTION:"}]
             prompt_ids = tokenizer.apply_chat_template(
-                prompt_messages,
-                add_generation_prompt=False,
+                messages,
+                add_generation_prompt=True,
                 return_tensors="pt",
             ).to(model.device)
 
-            action_ids = _generate_until_action(
-                model,
-                tokenizer,
+            attention_mask = torch.ones_like(prompt_ids, device=prompt_ids.device)
+            out = model.generate(
                 prompt_ids,
-                max_total_new_tokens=generation_max_new_tokens,
-                chunk_new_tokens=min(32, generation_max_new_tokens),
+                attention_mask=attention_mask,
+                max_new_tokens=generation_max_new_tokens,
                 temperature=temperature,
                 do_sample=True,
+                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
             )
+
+            action_ids = out[0][prompt_ids.shape[1] :]
             action_text = tokenizer.decode(action_ids, skip_special_tokens=True).strip()
             action = parse_action(action_text)
             if action is None:
-                repaired_ids = _repair_action_with_strict_prompt(model, tokenizer, messages)
-                repaired_text = tokenizer.decode(repaired_ids, skip_special_tokens=True).strip()
-                repaired_action = parse_action(repaired_text)
-                if repaired_action is not None:
-                    action_ids = repaired_ids
-                    action_text = repaired_text
-                    action = repaired_action
-                else:
-                    from benchmarks.reverse_code_door import TemporalAction
+                from benchmarks.reverse_code_door import TemporalAction
 
-                    action = TemporalAction(command="wait")
+                action = TemporalAction(command="wait")
 
             obs = env.step(action)
             if debug_prefix is not None:
@@ -167,14 +83,9 @@ def collect_episode(
                         skip_special_tokens=False,
                         clean_up_tokenization_spaces=False,
                     )
-                    print(
-                        f"{debug_prefix} tokens={len(action_ids)} token_ids={action_ids.tolist()}",
-                        flush=True,
-                    )
-                    print(
-                        f"{debug_prefix} full_decoded={full_decoded!r}",
-                        flush=True,
-                    )
+                    print(f"{debug_prefix} tokens={len(action_ids)} token_ids={action_ids.tolist()}", flush=True)
+                    print(f"{debug_prefix} full_decoded={full_decoded!r}", flush=True)
+
             messages.append({"role": "assistant", "content": format_action(action)})
             transitions.append((prompt_ids[0].cpu(), action_ids.cpu(), float(obs["reward"])))
 
@@ -185,11 +96,11 @@ def collect_episode(
     return transitions, infer_success(obs)
 
 
-def compute_episode_return(transitions: Iterable[tuple[torch.Tensor, torch.Tensor, float]]) -> float:
+def compute_episode_return(transitions: Iterable[tuple["torch.Tensor", "torch.Tensor", float]]) -> float:
     return sum(reward for _, _, reward in transitions)
 
 
-def policy_loss(model, prompt_ids: torch.Tensor, action_ids: torch.Tensor, advantage: float) -> torch.Tensor:
+def policy_loss(model, prompt_ids: "torch.Tensor", action_ids: "torch.Tensor", advantage: float) -> "torch.Tensor":
     """Compute mean token NLL over action tokens weighted by advantage."""
     import torch
 
@@ -216,33 +127,29 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
 
             for step in range(max_episode_steps):
                 messages.append({"role": "user", "content": obs_to_text(obs, step + 1)})
-                prompt_messages = messages + [{"role": "assistant", "content": "ACTION:"}]
                 prompt_ids = tokenizer.apply_chat_template(
-                    prompt_messages,
-                    add_generation_prompt=False,
+                    messages,
+                    add_generation_prompt=True,
                     return_tensors="pt",
                 ).to(model.device)
-                action_ids = _generate_until_action(
-                    model,
-                    tokenizer,
+
+                attention_mask = torch.ones_like(prompt_ids, device=prompt_ids.device)
+                out = model.generate(
                     prompt_ids,
-                    max_total_new_tokens=max_new_tokens,
-                    chunk_new_tokens=min(32, max_new_tokens),
+                    attention_mask=attention_mask,
+                    max_new_tokens=max_new_tokens,
                     temperature=0.0,
                     do_sample=False,
+                    pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
                 )
-                action_text = tokenizer.decode(action_ids, skip_special_tokens=True).strip()
+                action_text = tokenizer.decode(out[0][prompt_ids.shape[1] :], skip_special_tokens=True).strip()
                 action = parse_action(action_text)
                 if action is None:
-                    repaired_ids = _repair_action_with_strict_prompt(model, tokenizer, messages)
-                    repaired_text = tokenizer.decode(repaired_ids, skip_special_tokens=True).strip()
-                    repaired_action = parse_action(repaired_text)
-                    if repaired_action is not None:
-                        action = repaired_action
-                    else:
-                        from benchmarks.reverse_code_door import TemporalAction
+                    from benchmarks.reverse_code_door import TemporalAction
 
-                        action = TemporalAction(command="wait")
+                    action = TemporalAction(command="wait")
+
                 messages.append({"role": "assistant", "content": format_action(action)})
                 obs = env.step(action)
                 if obs["done"]:
@@ -261,7 +168,7 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train an Unsloth model on Reverse Code Door (script version)")
-    parser.add_argument("--model-name", default="unsloth/Qwen3-4B-Instruct-2507")
+    parser.add_argument("--model-name", default="unsloth/Qwen3-14B-unsloth-bnb-4bit")
     parser.add_argument("--output-dir", default="runs/reverse_code_door")
 
     parser.add_argument("--max-seq-length", type=int, default=2048)
@@ -277,7 +184,7 @@ def main() -> None:
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
 
     parser.add_argument("--max-episode-steps", type=int, default=10)
-    parser.add_argument("--generation-max-new-tokens", type=int, default=32)
+    parser.add_argument("--generation-max-new-tokens", type=int, default=64)
     parser.add_argument("--seed-min", type=int, default=0)
     parser.add_argument("--seed-max", type=int, default=10000)
     parser.add_argument("--rng-seed", type=int, default=3407)
