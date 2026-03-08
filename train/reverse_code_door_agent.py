@@ -15,7 +15,7 @@ SYSTEM_PROMPT = """You are an agent in a 1-D corridor:
 Goal: unlock the door at pos=1 with the secret 3-digit code shown by the oracle at pos=3.
 Budget: 6 steps total.
 
-The branch command rewinds time by N steps and sets your instruction_hint at the rewound position.
+The branch command rewinds time by N steps. After the rewind, your chat history is erased back to that point — you will NOT remember what you saw. The only thing that survives is the instruction field, which becomes your instruction_hint. So you MUST embed the exact code digits in the instruction, e.g. "Use code 482 at door". After a branch, read your instruction_hint to get the code.
 
 Output exactly one JSON object and nothing else. No explanation, no reasoning.
 
@@ -24,7 +24,7 @@ Valid formats:
   {"command":"backward"}
   {"command":"inspect"}
   {"command":"unlock","code":"XYZ"}
-  {"command":"branch","ago":N,"instruction":"..."}
+  {"command":"branch","ago":N,"instruction":"Use code XYZ at door"}
 """
 
 CODE_PATTERN = re.compile(r"\b(\d{3})\b")
