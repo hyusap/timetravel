@@ -360,7 +360,7 @@ def main() -> None:
                     for prompt_ids, action_ids, _ in transitions:
                         if len(action_ids) == 0:
                             continue
-                        loss = policy_loss(model, prompt_ids, action_ids, -advantage)
+                        loss = policy_loss(model, prompt_ids, action_ids, advantage)
                         # Backprop immediately to avoid retaining a giant graph across all transitions.
                         loss.backward()
                         total_loss_value += float(loss.detach().item())
