@@ -231,7 +231,7 @@ class ReverseCodeDoorEnv:
         if action.ago <= 0:
             raise ValueError("branch requires ago > 0")
         if action.ago > self._current_step():
-            raise ValueError("branch ago cannot exceed current_step")
+            action.ago = self._current_step()
 
         old_timeline_id = self._active_timeline_id
         old_timeline = self._active_timeline()
