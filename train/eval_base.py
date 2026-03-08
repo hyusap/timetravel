@@ -64,7 +64,7 @@ def run_episode(model, tokenizer, seed: int, max_steps: int, max_new_tokens: int
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate base model on Reverse Code Door")
-    parser.add_argument("--model-name", default="unsloth/gpt-oss-20b")
+    parser.add_argument("--model-name", default="unsloth/Qwen3-8B")
     parser.add_argument("--episodes", type=int, default=50)
     parser.add_argument("--max-steps", type=int, default=10)
     parser.add_argument("--max-new-tokens", type=int, default=32)
