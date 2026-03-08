@@ -44,9 +44,11 @@ def collect_episode(
     with torch.inference_mode():
         for step in range(max_episode_steps):
             messages.append({"role": "user", "content": obs_to_text(obs, step + 1)})
+            json_prefix = '{"command":"'
+            prompt_messages = messages + [{"role": "assistant", "content": json_prefix}]
             prompt_ids = tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
+                prompt_messages,
+                add_generation_prompt=False,
                 return_tensors="pt",
             ).to(model.device)
 
@@ -56,13 +58,13 @@ def collect_episode(
                 attention_mask=attention_mask,
                 max_new_tokens=generation_max_new_tokens,
                 temperature=temperature,
-                do_sample=True,
+                do_sample=False,
                 pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
             )
 
             action_ids = out[0][prompt_ids.shape[1] :]
-            action_text = tokenizer.decode(action_ids, skip_special_tokens=True).strip()
+            action_text = (json_prefix + tokenizer.decode(action_ids, skip_special_tokens=True)).strip()
             action = parse_action(action_text)
             if action is None:
                 from benchmarks.reverse_code_door import TemporalAction
@@ -127,9 +129,11 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
 
             for step in range(max_episode_steps):
                 messages.append({"role": "user", "content": obs_to_text(obs, step + 1)})
+                json_prefix = '{"command":"'
+                prompt_messages = messages + [{"role": "assistant", "content": json_prefix}]
                 prompt_ids = tokenizer.apply_chat_template(
-                    messages,
-                    add_generation_prompt=True,
+                    prompt_messages,
+                    add_generation_prompt=False,
                     return_tensors="pt",
                 ).to(model.device)
 
@@ -143,7 +147,7 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
                     pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
                     eos_token_id=tokenizer.eos_token_id,
                 )
-                action_text = tokenizer.decode(out[0][prompt_ids.shape[1] :], skip_special_tokens=True).strip()
+                action_text = (json_prefix + tokenizer.decode(out[0][prompt_ids.shape[1] :], skip_special_tokens=True)).strip()
                 action = parse_action(action_text)
                 if action is None:
                     from benchmarks.reverse_code_door import TemporalAction
@@ -178,7 +182,7 @@ def main() -> None:
     parser.add_argument("--num-train-steps", type=int, default=300)
     parser.add_argument("--episodes-per-step", type=int, default=4)
     parser.add_argument("--num-generations", type=int, default=4)
-    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
