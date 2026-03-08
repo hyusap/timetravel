@@ -21,6 +21,50 @@ from benchmarks.reverse_code_door import ReverseCodeDoorEnv
 from train.reverse_code_door_agent import SYSTEM_PROMPT, infer_success, obs_to_text, parse_action
 
 
+def _generate_until_action(
+    model,
+    tokenizer,
+    prompt_ids,
+    *,
+    max_total_new_tokens: int,
+    chunk_new_tokens: int,
+    temperature: float,
+    do_sample: bool,
+):
+    """Generate incrementally until a valid ACTION line is emitted or token cap is reached."""
+    import torch
+
+    generated = torch.empty(0, dtype=prompt_ids.dtype, device=prompt_ids.device)
+    cursor = prompt_ids
+    tokens_left = max_total_new_tokens
+
+    while tokens_left > 0:
+        step_tokens = min(chunk_new_tokens, tokens_left)
+        attention_mask = torch.ones_like(cursor, device=cursor.device)
+        out = model.generate(
+            cursor,
+            attention_mask=attention_mask,
+            max_new_tokens=step_tokens,
+            temperature=temperature,
+            do_sample=do_sample,
+            pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+        )
+        new_ids = out[0][cursor.shape[1] :]
+        if len(new_ids) == 0:
+            break
+
+        generated = torch.cat([generated, new_ids], dim=0)
+        cursor = torch.cat([cursor[0], new_ids]).unsqueeze(0)
+        tokens_left -= len(new_ids)
+
+        text = tokenizer.decode(generated, skip_special_tokens=True).strip()
+        if "action:" in text.lower() and parse_action(text) is not None:
+            break
+
+    return generated
+
+
 def collect_episode(
     model,
     tokenizer,
@@ -50,14 +94,15 @@ def collect_episode(
                 return_tensors="pt",
             ).to(model.device)
 
-            out = model.generate(
+            action_ids = _generate_until_action(
+                model,
+                tokenizer,
                 prompt_ids,
-                max_new_tokens=generation_max_new_tokens,
+                max_total_new_tokens=generation_max_new_tokens,
+                chunk_new_tokens=min(32, generation_max_new_tokens),
                 temperature=temperature,
                 do_sample=True,
-                pad_token_id=tokenizer.eos_token_id,
             )
-            action_ids = out[0][prompt_ids.shape[1] :]
             action_text = tokenizer.decode(action_ids, skip_special_tokens=True).strip()
             action = parse_action(action_text)
             if action is None:
@@ -133,14 +178,16 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
                     add_generation_prompt=True,
                     return_tensors="pt",
                 ).to(model.device)
-                out = model.generate(
+                action_ids = _generate_until_action(
+                    model,
+                    tokenizer,
                     prompt_ids,
-                    max_new_tokens=max_new_tokens,
+                    max_total_new_tokens=max_new_tokens,
+                    chunk_new_tokens=min(32, max_new_tokens),
                     temperature=0.0,
                     do_sample=False,
-                    pad_token_id=tokenizer.eos_token_id,
                 )
-                action_text = tokenizer.decode(out[0][prompt_ids.shape[1] :], skip_special_tokens=True).strip()
+                action_text = tokenizer.decode(action_ids, skip_special_tokens=True).strip()
                 action = parse_action(action_text)
                 if action is None:
                     from benchmarks.reverse_code_door import TemporalAction
