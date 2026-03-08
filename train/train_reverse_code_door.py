@@ -30,6 +30,7 @@ def collect_episode(
     generation_max_new_tokens: int,
     temperature: float,
     debug_prefix: str | None = None,
+    debug_full_tokens: bool = False,
 ) -> tuple[list[tuple[torch.Tensor, torch.Tensor, float]], bool]:
     """Roll out one sampled episode and return per-step supervised transitions."""
     import torch
@@ -72,6 +73,20 @@ def collect_episode(
                     f"pos={obs['position']} reward={obs['reward']:.3f} done={obs['done']}",
                     flush=True,
                 )
+                if debug_full_tokens:
+                    full_decoded = tokenizer.decode(
+                        action_ids,
+                        skip_special_tokens=False,
+                        clean_up_tokenization_spaces=False,
+                    )
+                    print(
+                        f"{debug_prefix} tokens={len(action_ids)} token_ids={action_ids.tolist()}",
+                        flush=True,
+                    )
+                    print(
+                        f"{debug_prefix} full_decoded={full_decoded!r}",
+                        flush=True,
+                    )
             messages.append({"role": "assistant", "content": action_text})
             transitions.append((prompt_ids[0].cpu(), action_ids.cpu(), float(obs["reward"])))
 
@@ -175,6 +190,11 @@ def main() -> None:
     parser.add_argument("--save-every", type=int, default=100)
     parser.add_argument("--print-actions", action="store_true")
     parser.add_argument("--print-actions-train-steps", type=int, default=3)
+    parser.add_argument(
+        "--print-full-tokens",
+        action="store_true",
+        help="When printing actions, also print full generated token IDs and full decoded text.",
+    )
     args = parser.parse_args()
 
     out_dir = Path(args.output_dir)
@@ -236,6 +256,7 @@ def main() -> None:
                         generation_max_new_tokens=args.generation_max_new_tokens,
                         temperature=args.temperature,
                         debug_prefix=debug_prefix,
+                        debug_full_tokens=args.print_full_tokens,
                     )
                     ret = compute_episode_return(transitions)
                     group_rollouts.append((transitions, ret, success))
