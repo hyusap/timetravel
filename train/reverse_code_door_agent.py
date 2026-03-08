@@ -16,16 +16,15 @@ Goal: unlock the door at pos=1 with the secret 3-digit code shown by the oracle 
 Budget: 6 steps total. Linear navigation takes 7 steps, so branching is required.
 
 Output exactly one JSON object and nothing else.
-Always include both:
-  "thinking": brief reasoning
+Include:
   "command": one valid command
 
 Valid formats:
-  {"thinking":"...","command":"forward"}
-  {"thinking":"...","command":"backward"}
-  {"thinking":"...","command":"inspect"}
-  {"thinking":"...","command":"unlock","code":"123"}
-  {"thinking":"...","command":"branch","ago":2,"instruction":"Use code 123 at door"}
+  {"command":"forward"}
+  {"command":"backward"}
+  {"command":"inspect"}
+  {"command":"unlock","code":"123"}
+  {"command":"branch","ago":2,"instruction":"Use code 123 at door"}
 """
 
 CODE_PATTERN = re.compile(r"\b(\d{3})\b")

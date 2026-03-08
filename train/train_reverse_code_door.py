@@ -17,7 +17,7 @@ from typing import Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from benchmarks.reverse_code_door import ReverseCodeDoorEnv
+from benchmarks.reverse_code_door import EpisodeConfig, ReverseCodeDoorEnv
 from train.reverse_code_door_agent import SYSTEM_PROMPT, format_action, infer_success, obs_to_text, parse_action
 
 
@@ -71,6 +71,7 @@ def collect_episode(
     *,
     seed: int,
     max_episode_steps: int,
+    env_config: EpisodeConfig,
     generation_max_new_tokens: int,
     temperature: float,
     debug_prefix: str | None = None,
@@ -79,7 +80,7 @@ def collect_episode(
     """Roll out one sampled episode and return per-step supervised transitions."""
     import torch
 
-    env = ReverseCodeDoorEnv()
+    env = ReverseCodeDoorEnv(config=env_config)
     obs = env.reset(seed=seed)
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     transitions: list[tuple[torch.Tensor, torch.Tensor, float]] = []
@@ -153,10 +154,18 @@ def policy_loss(model, prompt_ids: "torch.Tensor", action_ids: "torch.Tensor", a
     return outputs.loss * advantage
 
 
-def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, max_new_tokens: int) -> dict:
+def evaluate_model(
+    model,
+    tokenizer,
+    *,
+    seeds: range,
+    max_episode_steps: int,
+    max_new_tokens: int,
+    env_config: EpisodeConfig,
+) -> dict:
     import torch
 
-    env = ReverseCodeDoorEnv()
+    env = ReverseCodeDoorEnv(config=env_config)
     successes = 0
     branch_used = 0
 
@@ -224,7 +233,9 @@ def main() -> None:
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
 
     parser.add_argument("--max-episode-steps", type=int, default=10)
+    parser.add_argument("--max-turns", type=int, default=None, help="Alias for max episode steps")
     parser.add_argument("--generation-max-new-tokens", type=int, default=64)
+    parser.add_argument("--env-budget", type=int, default=6)
     parser.add_argument("--seed-min", type=int, default=0)
     parser.add_argument("--seed-max", type=int, default=10000)
     parser.add_argument("--rng-seed", type=int, default=3407)
@@ -240,9 +251,12 @@ def main() -> None:
         help="When printing actions, also print full generated token IDs and full decoded text.",
     )
     args = parser.parse_args()
+    if args.max_turns is not None:
+        args.max_episode_steps = args.max_turns
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    env_config = EpisodeConfig(budget=args.env_budget)
 
     import torch
     from torch.nn.utils import clip_grad_norm_
@@ -297,6 +311,7 @@ def main() -> None:
                         tokenizer,
                         seed=seed,
                         max_episode_steps=args.max_episode_steps,
+                        env_config=env_config,
                         generation_max_new_tokens=args.generation_max_new_tokens,
                         temperature=args.temperature,
                         debug_prefix=debug_prefix,
@@ -344,6 +359,7 @@ def main() -> None:
                     seeds=range(2000, 2000 + args.eval_episodes),
                     max_episode_steps=args.max_episode_steps,
                     max_new_tokens=args.generation_max_new_tokens,
+                    env_config=env_config,
                 )
                 row.update({f"eval_{k}": v for k, v in eval_metrics.items()})
 
