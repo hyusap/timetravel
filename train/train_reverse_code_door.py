@@ -65,6 +65,40 @@ def _generate_until_action(
     return generated
 
 
+def _repair_action_with_strict_prompt(
+    model,
+    tokenizer,
+    messages,
+    *,
+    max_new_tokens: int = 24,
+):
+    """Second-pass decode forcing a one-line ACTION response."""
+    import torch
+
+    repair_messages = messages + [
+        {
+            "role": "user",
+            "content": "Output exactly one line in this format only: ACTION: <command>",
+        }
+    ]
+    prompt_ids = tokenizer.apply_chat_template(
+        repair_messages,
+        add_generation_prompt=True,
+        return_tensors="pt",
+    ).to(model.device)
+    attention_mask = torch.ones_like(prompt_ids, device=prompt_ids.device)
+    out = model.generate(
+        prompt_ids,
+        attention_mask=attention_mask,
+        max_new_tokens=max_new_tokens,
+        temperature=0.0,
+        do_sample=False,
+        pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+    )
+    return out[0][prompt_ids.shape[1] :]
+
+
 def collect_episode(
     model,
     tokenizer,
@@ -107,9 +141,17 @@ def collect_episode(
             action_text = tokenizer.decode(action_ids, skip_special_tokens=True).strip()
             action = parse_action(action_text)
             if action is None:
-                from benchmarks.reverse_code_door import TemporalAction
+                repaired_ids = _repair_action_with_strict_prompt(model, tokenizer, messages)
+                repaired_text = tokenizer.decode(repaired_ids, skip_special_tokens=True).strip()
+                repaired_action = parse_action(repaired_text)
+                if repaired_action is not None:
+                    action_ids = repaired_ids
+                    action_text = repaired_text
+                    action = repaired_action
+                else:
+                    from benchmarks.reverse_code_door import TemporalAction
 
-                action = TemporalAction(command="wait")
+                    action = TemporalAction(command="wait")
 
             obs = env.step(action)
             if debug_prefix is not None:
@@ -192,9 +234,15 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
                 action_text = tokenizer.decode(action_ids, skip_special_tokens=True).strip()
                 action = parse_action(action_text)
                 if action is None:
-                    from benchmarks.reverse_code_door import TemporalAction
+                    repaired_ids = _repair_action_with_strict_prompt(model, tokenizer, messages)
+                    repaired_text = tokenizer.decode(repaired_ids, skip_special_tokens=True).strip()
+                    repaired_action = parse_action(repaired_text)
+                    if repaired_action is not None:
+                        action = repaired_action
+                    else:
+                        from benchmarks.reverse_code_door import TemporalAction
 
-                    action = TemporalAction(command="wait")
+                        action = TemporalAction(command="wait")
                 messages.append({"role": "assistant", "content": format_action(action)})
                 obs = env.step(action)
                 if obs["done"]:

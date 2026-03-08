@@ -16,6 +16,30 @@ from benchmarks.reverse_code_door import ReverseCodeDoorEnv, TemporalAction
 from train.reverse_code_door_agent import SYSTEM_PROMPT, format_action, infer_success, obs_to_text, parse_action
 
 
+def _repair_action_with_strict_prompt(model, tokenizer, messages, *, max_new_tokens: int = 24):
+    import torch
+
+    repair_messages = messages + [
+        {"role": "user", "content": "Output exactly one line in this format only: ACTION: <command>"}
+    ]
+    prompt_ids = tokenizer.apply_chat_template(
+        repair_messages,
+        add_generation_prompt=True,
+        return_tensors="pt",
+    ).to(model.device)
+    attention_mask = torch.ones_like(prompt_ids, device=prompt_ids.device)
+    out = model.generate(
+        prompt_ids,
+        attention_mask=attention_mask,
+        max_new_tokens=max_new_tokens,
+        temperature=0.0,
+        do_sample=False,
+        pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+    )
+    return out[0][prompt_ids.shape[1] :]
+
+
 def run_episode(model, tokenizer, seed: int, max_steps: int, max_new_tokens: int, verbose: bool = False) -> dict:
     import torch
 
@@ -47,7 +71,11 @@ def run_episode(model, tokenizer, seed: int, max_steps: int, max_new_tokens: int
             )
 
             action_text = tokenizer.decode(out[0][prompt_ids.shape[1] :], skip_special_tokens=True).strip()
-            action = parse_action(action_text) or TemporalAction(command="wait")
+            action = parse_action(action_text)
+            if action is None:
+                repaired_ids = _repair_action_with_strict_prompt(model, tokenizer, messages)
+                repaired_text = tokenizer.decode(repaired_ids, skip_special_tokens=True).strip()
+                action = parse_action(repaired_text) or TemporalAction(command="wait")
             messages.append({"role": "assistant", "content": format_action(action)})
             obs = env.step(action)
 
