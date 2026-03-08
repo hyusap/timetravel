@@ -18,7 +18,7 @@ from typing import Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from benchmarks.reverse_code_door import EpisodeConfig, ReverseCodeDoorEnv
+from benchmarks.reverse_code_door import EpisodeConfig, ReverseCodeDoorEnv, TemporalAction
 from train.reverse_code_door_agent import SYSTEM_PROMPT, format_action, infer_success, obs_to_text, parse_action
 
 
@@ -75,6 +75,7 @@ def collect_episode(
     env_config: EpisodeConfig,
     generation_max_new_tokens: int,
     temperature: float,
+    exploration_epsilon: float = 0.0,
     debug_prefix: str | None = None,
     debug_full_tokens: bool = False,
 ) -> tuple[list[tuple["torch.Tensor", "torch.Tensor", float]], bool]:
@@ -108,9 +109,11 @@ def collect_episode(
             action_text = tokenizer.decode(action_ids, skip_special_tokens=True).strip()
             action = parse_action(action_text)
             if action is None:
-                from benchmarks.reverse_code_door import TemporalAction
-
                 action = TemporalAction(command="wait")
+            elif exploration_epsilon > 0.0 and random.random() < exploration_epsilon:
+                # Force exploration to avoid identical rollouts (zero-advantage collapse).
+                exploratory = ["forward", "backward", "inspect", "wait"]
+                action = TemporalAction(command=random.choice(exploratory))
 
             obs = env.step(action)
             if debug_prefix is not None:
@@ -229,6 +232,12 @@ def main() -> None:
     parser.add_argument("--episodes-per-step", type=int, default=4)
     parser.add_argument("--num-generations", type=int, default=4)
     parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument(
+        "--exploration-epsilon",
+        type=float,
+        default=0.15,
+        help="Probability of replacing sampled action with random exploratory action.",
+    )
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
@@ -327,6 +336,7 @@ def main() -> None:
                         env_config=env_config,
                         generation_max_new_tokens=args.generation_max_new_tokens,
                         temperature=args.temperature,
+                        exploration_epsilon=args.exploration_epsilon,
                         debug_prefix=debug_prefix,
                         debug_full_tokens=args.print_full_tokens,
                     )
@@ -338,6 +348,12 @@ def main() -> None:
                 mean_ret = sum(returns) / len(returns)
                 std_ret = (sum((r - mean_ret) ** 2 for r in returns) / len(returns)) ** 0.5 + 1e-8
                 advantages = [(r - mean_ret) / std_ret for r in returns]
+                if train_step < args.print_actions_train_steps:
+                    print(
+                        f"[grpo] train_step={train_step} seed={seed} returns={returns} "
+                        f"mean={mean_ret:.3f} std={std_ret:.6f}",
+                        flush=True,
+                    )
                 step_returns.extend(returns)
 
                 for (transitions, _, _), advantage in zip(group_rollouts, advantages):
