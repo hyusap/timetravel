@@ -14,7 +14,10 @@ SYSTEM_PROMPT = """You are an agent in a 1-D corridor:
 Goal: unlock the door at pos=1 with the secret 3-digit code shown by the oracle at pos=3.
 Budget: 6 steps total. Linear navigation takes 7 steps - you MUST use branch to rewind.
 
-Output exactly one action per turn in this format:
+You may think step-by-step, but your final line MUST be exactly:
+  ACTION: <command>
+
+Allowed commands:
   forward
   backward
   inspect
@@ -38,8 +41,19 @@ def obs_to_text(obs: dict, step_num: int) -> str:
 
 def parse_action(text: str) -> Optional[TemporalAction]:
     """Parse model output into a TemporalAction."""
+    if not text.strip():
+        return None
 
-    clean = text.strip().lower().splitlines()[0].strip() if text.strip() else ""
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    action_line = None
+    for line in lines:
+        if line.lower().startswith("action:"):
+            action_line = line.split(":", 1)[1].strip().lower()
+    if action_line is None:
+        # Fallback: use the last non-empty line as best-effort command text.
+        action_line = lines[-1].lower()
+
+    clean = action_line
     if clean == "forward":
         return TemporalAction(command="forward")
     if clean == "backward":
