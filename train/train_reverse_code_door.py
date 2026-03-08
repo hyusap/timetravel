@@ -288,8 +288,8 @@ def main() -> None:
                 group_rollouts = []
                 for gen_idx in range(args.num_generations):
                     debug_prefix = None
-                    if args.print_actions and train_step < args.print_actions_train_steps and seed_idx == 0 and gen_idx == 0:
-                        debug_prefix = f"[train_step={train_step} seed={seed}]"
+                    if args.print_actions and train_step < args.print_actions_train_steps:
+                        debug_prefix = f"[train_step={train_step} seed={seed} gen={gen_idx}]"
                     transitions, success = collect_episode(
                         model,
                         tokenizer,
