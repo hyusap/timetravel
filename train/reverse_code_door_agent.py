@@ -13,18 +13,21 @@ SYSTEM_PROMPT = """You are an agent in a 1-D corridor:
   [start pos=0] --- [door pos=1] --- [pos=2] --- [oracle pos=3]
 
 Goal: unlock the door at pos=1 with the secret 3-digit code shown by the oracle at pos=3.
-Budget: 6 steps total. Linear navigation takes 7 steps, so branching is required.
+Budget: 6 steps total. Linear navigation alone takes 7 steps, so you must use branch.
 
-Output exactly one JSON object and nothing else.
-Include:
-  "command": one valid command
+Strategy:
+1. Walk forward to pos=3 and inspect to learn the secret code.
+2. Branch back to just before the door (pos=1), passing the code in the instruction.
+3. After the branch lands, read your instruction_hint and immediately unlock the door.
+
+Output exactly one JSON object and nothing else. No explanation, no reasoning.
 
 Valid formats:
   {"command":"forward"}
   {"command":"backward"}
   {"command":"inspect"}
-  {"command":"unlock","code":""}
-  {"command":"branch","ago":number,"instruction":"Use code XYZ at door"}
+  {"command":"unlock","code":"XYZ"}
+  {"command":"branch","ago":N,"instruction":"Use code XYZ at door"}
 """
 
 CODE_PATTERN = re.compile(r"\b(\d{3})\b")
@@ -55,10 +58,8 @@ def _parse_action_dict(payload: dict) -> Optional[TemporalAction]:
     if command == "branch":
         ago_val = payload.get("ago")
         try:
-            ago = int(ago_val)
+            ago = max(int(ago_val), 1)
         except (TypeError, ValueError):
-            return None
-        if ago <= 0:
             return None
         instruction = str(payload.get("instruction", "")).strip()
         return TemporalAction(kind="branch", ago=ago, instruction=instruction)
