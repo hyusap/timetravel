@@ -19,8 +19,7 @@ Output exactly one action per turn in this format:
   backward
   inspect
   unlock <code>
-  branch <ago> <instruction>
-  abandon"""
+  branch <ago> <instruction>"""
 
 CODE_PATTERN = re.compile(r"\b(\d{3})\b")
 
@@ -47,8 +46,6 @@ def parse_action(text: str) -> Optional[TemporalAction]:
         return TemporalAction(command="backward")
     if clean == "inspect":
         return TemporalAction(command="inspect")
-    if clean == "abandon":
-        return TemporalAction(kind="abandon")
     if clean.startswith("unlock"):
         parts = clean.split()
         code = parts[1] if len(parts) > 1 else ""

@@ -16,5 +16,6 @@ def test_parse_unlock_and_branch_actions() -> None:
 
 
 def test_parse_invalid_returns_none() -> None:
+    assert parse_action("abandon") is None
     assert parse_action("branch x nope") is None
     assert parse_action("nonsense") is None

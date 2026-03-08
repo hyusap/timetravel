@@ -62,7 +62,7 @@ def collect_episode(
             if action is None:
                 from benchmarks.reverse_code_door import TemporalAction
 
-                action = TemporalAction(kind="abandon")
+                action = TemporalAction(command="wait")
 
             obs = env.step(action)
             if debug_prefix is not None:
@@ -130,7 +130,7 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
                 if action is None:
                     from benchmarks.reverse_code_door import TemporalAction
 
-                    action = TemporalAction(kind="abandon")
+                    action = TemporalAction(command="wait")
                 messages.append({"role": "assistant", "content": action_text})
                 obs = env.step(action)
                 if obs["done"]:

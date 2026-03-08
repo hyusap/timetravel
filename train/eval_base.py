@@ -43,7 +43,7 @@ def run_episode(model, tokenizer, seed: int, max_steps: int, max_new_tokens: int
             )
 
             action_text = tokenizer.decode(out[0][prompt_ids.shape[1] :], skip_special_tokens=True).strip()
-            action = parse_action(action_text) or TemporalAction(kind="abandon")
+            action = parse_action(action_text) or TemporalAction(command="wait")
             messages.append({"role": "assistant", "content": action_text})
             obs = env.step(action)
 
