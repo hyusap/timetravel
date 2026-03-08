@@ -314,11 +314,11 @@ def main() -> None:
     with metrics_file.open("w", encoding="utf-8") as mf:
         for train_step in range(args.num_train_steps):
             step_start = time.perf_counter()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
 
             step_successes = 0
             step_returns: list[float] = []
-            total_loss = torch.tensor(0.0, device=model.device)
+            total_loss_value = 0.0
             num_transitions = 0
 
             seeds = [random.randint(args.seed_min, args.seed_max) for _ in range(args.episodes_per_step)]
@@ -361,11 +361,17 @@ def main() -> None:
                         if len(action_ids) == 0:
                             continue
                         loss = policy_loss(model, prompt_ids, action_ids, -advantage)
-                        total_loss = total_loss + loss
+                        # Backprop immediately to avoid retaining a giant graph across all transitions.
+                        loss.backward()
+                        total_loss_value += float(loss.detach().item())
                         num_transitions += 1
 
             if num_transitions > 0:
-                (total_loss / num_transitions).backward()
+                # Normalize gradients to match mean-loss scaling.
+                scale = 1.0 / num_transitions
+                for p in model.parameters():
+                    if p.grad is not None:
+                        p.grad.mul_(scale)
                 grad_norm = clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
                 step_ms = (time.perf_counter() - step_start) * 1000.0
@@ -380,7 +386,7 @@ def main() -> None:
             denom = args.episodes_per_step * args.num_generations
             success_rate = step_successes / denom
             avg_return = sum(step_returns) / len(step_returns)
-            loss_value = total_loss.item() / max(num_transitions, 1)
+            loss_value = total_loss_value / max(num_transitions, 1)
 
             row = {
                 "step": train_step,
