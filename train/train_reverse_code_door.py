@@ -29,6 +29,7 @@ def collect_episode(
     max_episode_steps: int,
     generation_max_new_tokens: int,
     temperature: float,
+    debug_prefix: str | None = None,
 ) -> tuple[list[tuple[torch.Tensor, torch.Tensor, float]], bool]:
     """Roll out one sampled episode and return per-step supervised transitions."""
     import torch
@@ -64,6 +65,13 @@ def collect_episode(
                 action = TemporalAction(kind="abandon")
 
             obs = env.step(action)
+            if debug_prefix is not None:
+                action_kind = action.kind if action.kind != "step" else action.command
+                print(
+                    f"{debug_prefix} step={step+1} action={action_kind!r} raw={action_text!r} "
+                    f"pos={obs['position']} reward={obs['reward']:.3f} done={obs['done']}",
+                    flush=True,
+                )
             messages.append({"role": "assistant", "content": action_text})
             transitions.append((prompt_ids[0].cpu(), action_ids.cpu(), float(obs["reward"])))
 
@@ -165,6 +173,8 @@ def main() -> None:
     parser.add_argument("--eval-every", type=int, default=25)
     parser.add_argument("--eval-episodes", type=int, default=100)
     parser.add_argument("--save-every", type=int, default=100)
+    parser.add_argument("--print-actions", action="store_true")
+    parser.add_argument("--print-actions-train-steps", type=int, default=3)
     args = parser.parse_args()
 
     out_dir = Path(args.output_dir)
@@ -212,9 +222,12 @@ def main() -> None:
             num_transitions = 0
 
             seeds = [random.randint(args.seed_min, args.seed_max) for _ in range(args.episodes_per_step)]
-            for seed in seeds:
+            for seed_idx, seed in enumerate(seeds):
                 group_rollouts = []
-                for _ in range(args.num_generations):
+                for gen_idx in range(args.num_generations):
+                    debug_prefix = None
+                    if args.print_actions and train_step < args.print_actions_train_steps and seed_idx == 0 and gen_idx == 0:
+                        debug_prefix = f"[train_step={train_step} seed={seed}]"
                     transitions, success = collect_episode(
                         model,
                         tokenizer,
@@ -222,6 +235,7 @@ def main() -> None:
                         max_episode_steps=args.max_episode_steps,
                         generation_max_new_tokens=args.generation_max_new_tokens,
                         temperature=args.temperature,
+                        debug_prefix=debug_prefix,
                     )
                     ret = compute_episode_return(transitions)
                     group_rollouts.append((transitions, ret, success))
