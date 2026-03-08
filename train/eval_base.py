@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from benchmarks.reverse_code_door import ReverseCodeDoorEnv, TemporalAction
-from train.reverse_code_door_agent import SYSTEM_PROMPT, infer_success, obs_to_text, parse_action
+from train.reverse_code_door_agent import SYSTEM_PROMPT, format_action, infer_success, obs_to_text, parse_action
 
 
 def run_episode(model, tokenizer, seed: int, max_steps: int, max_new_tokens: int, verbose: bool = False) -> dict:
@@ -34,17 +34,20 @@ def run_episode(model, tokenizer, seed: int, max_steps: int, max_new_tokens: int
                 return_tensors="pt",
             ).to(model.device)
 
+            attention_mask = torch.ones_like(prompt_ids, device=prompt_ids.device)
             out = model.generate(
                 prompt_ids,
+                attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
                 temperature=0.0,
                 do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
             )
 
             action_text = tokenizer.decode(out[0][prompt_ids.shape[1] :], skip_special_tokens=True).strip()
             action = parse_action(action_text) or TemporalAction(command="wait")
-            messages.append({"role": "assistant", "content": action_text})
+            messages.append({"role": "assistant", "content": format_action(action)})
             obs = env.step(action)
 
             if verbose:

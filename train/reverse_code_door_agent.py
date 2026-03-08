@@ -79,3 +79,14 @@ def parse_action(text: str) -> Optional[TemporalAction]:
 
 def infer_success(obs: dict) -> bool:
     return bool(obs["info"].get("command") == "unlock" and obs["reward"] > 0)
+
+
+def format_action(action: TemporalAction) -> str:
+    """Return a compact canonical action string for chat history."""
+    if action.kind != "step":
+        if action.kind == "branch":
+            return f"ACTION: branch {action.ago} {action.instruction}".strip()
+        return f"ACTION: {action.kind}"
+    if action.command == "unlock":
+        return f"ACTION: unlock {action.unlock_code or ''}".strip()
+    return f"ACTION: {action.command}"

@@ -18,7 +18,7 @@ from typing import Iterable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from benchmarks.reverse_code_door import ReverseCodeDoorEnv
-from train.reverse_code_door_agent import SYSTEM_PROMPT, infer_success, obs_to_text, parse_action
+from train.reverse_code_door_agent import SYSTEM_PROMPT, format_action, infer_success, obs_to_text, parse_action
 
 
 def _generate_until_action(
@@ -132,7 +132,7 @@ def collect_episode(
                         f"{debug_prefix} full_decoded={full_decoded!r}",
                         flush=True,
                     )
-            messages.append({"role": "assistant", "content": action_text})
+            messages.append({"role": "assistant", "content": format_action(action)})
             transitions.append((prompt_ids[0].cpu(), action_ids.cpu(), float(obs["reward"])))
 
             if obs["done"]:
@@ -193,7 +193,7 @@ def evaluate_model(model, tokenizer, *, seeds: range, max_episode_steps: int, ma
                     from benchmarks.reverse_code_door import TemporalAction
 
                     action = TemporalAction(command="wait")
-                messages.append({"role": "assistant", "content": action_text})
+                messages.append({"role": "assistant", "content": format_action(action)})
                 obs = env.step(action)
                 if obs["done"]:
                     break
@@ -214,7 +214,7 @@ def main() -> None:
     parser.add_argument("--model-name", default="unsloth/Qwen3-8B")
     parser.add_argument("--output-dir", default="runs/reverse_code_door")
 
-    parser.add_argument("--max-seq-length", type=int, default=1024)
+    parser.add_argument("--max-seq-length", type=int, default=2048)
     parser.add_argument("--load-in-4bit", action="store_true", default=True)
     parser.add_argument("--lora-rank", type=int, default=4)
 
